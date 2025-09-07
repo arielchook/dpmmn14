@@ -10,7 +10,7 @@
 using boost::asio::ip::tcp;
 
 // The port number the server will listen on.
-const int PORT = 12345;
+const int DEFAULT_PORT = 1234;
 
 // This function is executed in a new thread for each client.
 // It creates a RequestHandler to process the client's requests.
@@ -27,17 +27,26 @@ void session(tcp::socket sock)
     }
 }
 
-int main()
+int main(int argc, char *argv[])
 {
     try
     {
+        // Allow port number to be specified as a command line argument.
+        // Default to DEFAULT_PORT if not provided.
+        int port = DEFAULT_PORT;
+        if (argc > 1)
+        {
+            port = std::atoi(argv[1]);
+        }
+
         // Boost.Asio requires an io_context object.
         boost::asio::io_context io_context;
 
         // The acceptor object listens for new connections.
-        tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), PORT));
+        tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), port));
 
-        std::cout << "Server listening on port " << PORT << "..." << std::endl;
+        std::cout << "File Backup Server listening on port " << port << "..." << std::endl;
+        std::cout << "Created by Ariel Cohen ~ arielchook@gmail.com" << std::endl;
 
         // The main server loop.
         while (true)
@@ -52,6 +61,7 @@ int main()
             std::thread(session, std::move(socket)).detach();
         }
     }
+
     catch (const std::exception &e)
     {
         std::cerr << "Server error: " << e.what() << std::endl;

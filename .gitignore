@@ -1,0 +1,5 @@
+atlas.jpg
+*.obj
+*.exe
+*.pdb
+.vscode/*

@@ -6,6 +6,10 @@
 
 #include <boost/asio.hpp>
 #include <string>
+#include <vector>
+#include <filesystem>
+#include <istream>
+
 
 using boost::asio::ip::tcp;
 
@@ -61,11 +65,9 @@ private:
     // Sends a response with version, status, name_len, and filename (for 212, 1001).
     void sendFullHeaderResponse(StatusCode status, const std::string &filename);
 
-    // Sends a response that includes a file's content.
-    void sendFileResponse(StatusCode status, const std::string &filename, const std::vector<char> &fileContent);
+    // Sends a response that includes content, read from a stream.
+    void sendStreamResponse(StatusCode status, const std::string &filename, uint32_t contentSize, std::istream &contentStream);
 
-    // Generates a random alphanumeric string of a given length.
-    std::string generateRandomString(size_t length);
 
     tcp::socket m_socket; // The socket for this client connection.
     uint32_t m_userId;    // The user ID from the request header.
