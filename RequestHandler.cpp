@@ -7,7 +7,6 @@
 #include <fstream>
 #include <filesystem>
 #include <vector>
-#include <random>
 #include <algorithm>
 #include <string>
 #include <iomanip>
@@ -262,11 +261,9 @@ void RequestHandler::handleListFiles()
 
     // Convert string to vector<char> for sending
     std::vector<char> fileListContent(fileListStr.begin(), fileListStr.end());
-    // Generate a random name for this temporary list
-    std::string randomFilename = generateRandomString(32);
 
     std::cout << "Sending file list for user " << m_userId << std::endl;
-    sendFileResponse(StatusCode::LIST_SUCCESS, randomFilename, fileListContent);
+    sendFileResponse(StatusCode::LIST_SUCCESS, "", fileListContent);
 }
 
 // Sends a simple status response (for 1002, 1003).
@@ -330,26 +327,8 @@ bool RequestHandler::sendBytes(const void *buffer, size_t length)
     boost::asio::write(m_socket, boost::asio::buffer(buffer, length), ec);
     if (ec)
     {
-        std::cerr << "Write error: " << ec.message() << std::endl;
+        std::cerr << "Write error: " << ec.what() << std::endl;
         return false;
     }
     return true;
-}
-
-// Generates a random string for the LIST_FILES response filename.
-std::string RequestHandler::generateRandomString(size_t length)
-{
-    const std::string chars =
-        "0123456789"
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz";
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    std::uniform_int_distribution<> distribution(0, chars.size() - 1);
-    std::string random_string;
-    for (size_t i = 0; i < length; ++i)
-    {
-        random_string += chars[distribution(generator)];
-    }
-    return random_string;
 }

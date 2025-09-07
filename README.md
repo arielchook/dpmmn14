@@ -4,34 +4,47 @@ This project contains a C++ backup server and a Python client that communicate o
 
 ## 1. Server Setup (C++)
 
-The server is written in C++ and uses the **Boost.Asio** library for networking.
+The server is written in C++ and uses the **Boost.Asio** library for networking. It is built using a `Makefile` with Microsoft's C++ compiler (`cl.exe`).
 
 ### Prerequisites
 
-- **Visual Studio 2019 or later:** With the "Desktop development with C++" workload installed.
-- **Boost Library:** You need to download and set up the Boost C++ libraries.
-  1.  Go to the [Boost website](https://www.boost.org/users/download/) and download the latest version.
-  2.  Extract the downloaded archive to a location on your computer, for example, `C:\local\boost_1_85_0`.
-  3.  You don't need to build the libraries for this project, as we are only using the header-only parts of Boost.Asio.
+- **Microsoft C++ Build Tools:** You must install the build tools which include the C++ compiler and `nmake`. You can download them from the [Visual Studio website](https://visualstudio.microsoft.com/visual-cpp-build-tools/).
 
-### Configuring Visual Studio
+### Dependencies
 
-1.  Create a new C++ Console App project in Visual Studio.
-2.  Add the three server files (`main.cpp`, `RequestHandler.h`, `RequestHandler.cpp`) to the project.
-3.  Configure the project to find the Boost headers:
-    - Right-click on your project in the Solution Explorer and go to **Properties**.
-    - Make sure the Configuration is set to **All Configurations** and Platform is **All Platforms**.
-    - Navigate to **C/C++ -> General**.
-    - In the **Additional Include Directories** field, add the path to your Boost directory (e.g., `C:\local\boost_1_85_0`).
-4.  Enable C++17 or later:
-    - Navigate to **C/C++ -> Language**.
-    - Set **C++ Language Standard** to `ISO C++17 Standard (/std:c++17)` or newer.
+- **Boost:** The project has a dependency on the Boost C++ libraries. However, a subset of the required header files (from Boost version 1.89.0) is already included in the `boost/` directory of this repository. This means you **do not** need to download or install Boost separately.
+
+### Building the Server
+
+The server can be built from the command line using `nmake`.
+
+1.  **Set Up Environment:** Before building, you need to set up the Visual Studio environment variables. The `Makefile` is configured to do this automatically by calling `vcvarsall.bat`.
+    -   Ensure the environment variable `VCINSTALLDIR` is set to the root of your Visual Studio installation's VC directory (e.g., `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC`).
+    -   The `Makefile` uses this variable to find `vcvarsall.bat`. If your path is different, you may need to adjust the `build` target in the `Makefile`.
+
+2.  **Build Command:** Open a command prompt, navigate to the project's root directory, and run:
+    ```sh
+    nmake build
+    ```
+    This command will first set up the environment and then compile the source files, creating `server.exe`.
 
 ### Running the Server
 
-1.  Compile and run the project from within Visual Studio (press `F5`).
-2.  A console window will appear, indicating that the server is running and listening for connections on port 1234.
-3.  The server will create a `C:\backupsvr` directory if it doesn't exist. This is where all client files will be stored.
+-   The server executable is `server.exe`.
+-   It accepts an optional command-line argument for the port number.
+-   If no port is provided, it defaults to `1234`.
+
+**Examples:**
+
+-   Run on the default port:
+    ```sh
+    server.exe
+    ```
+-   Run on a specific port (e.g., 8080):
+    ```sh
+    server.exe 8080
+    ```
+-   The server will create a `C:\backupsvr` directory if it doesn't exist. This is where all client files will be stored.
 
 ## 2. Client Setup (Python)
 
@@ -43,7 +56,7 @@ The client is a simple Python script.
 
 ### Configuration
 
-Before running, make sure the `mmn14client` folder is set up correctly:
+Before running, make sure the client directory is set up correctly:
 
 1.  **`server.info`**: This file must contain the server's address and port. For a server running on the same machine, the content should be:
     ```
@@ -61,9 +74,9 @@ Before running, make sure the `mmn14client` folder is set up correctly:
 ### Running the Client
 
 1.  Open a terminal or command prompt.
-2.  Navigate to the `mmn14client` directory.
+2.  Navigate to the project directory.
 3.  Run the script using the command:
     ```sh
-    python mmn14client.py
+    python client.py
     ```
 4.  The client will execute the predefined sequence of operations (list, backup, backup, list, restore, delete, restore) and print the server's response for each step. The restored file will be saved as `tmp` in the client directory.

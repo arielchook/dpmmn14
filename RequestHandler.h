@@ -64,8 +64,7 @@ private:
     // Sends a response that includes a file's content.
     void sendFileResponse(StatusCode status, const std::string &filename, const std::vector<char> &fileContent);
 
-    // Generates a random alphanumeric string of a given length.
-    std::string generateRandomString(size_t length);
+    
 
     tcp::socket m_socket; // The socket for this client connection.
     uint32_t m_userId;    // The user ID from the request header.

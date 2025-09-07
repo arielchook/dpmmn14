@@ -1,6 +1,5 @@
 atlas.jpg
-main.o
-RequestHandler.o
-.vscode/launch.json
-.vscode/settings.json
-.vscode/tasks.json
+*.obj
+*.exe
+*.pdb
+.vscode/*
