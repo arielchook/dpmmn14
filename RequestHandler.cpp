@@ -10,12 +10,20 @@
 #include <algorithm>
 #include <string>
 #include <iomanip>
+#include <sstream>
 
-#define DEBUG 1
+// DEBUG flag - if set to 1 it prints all sent and received bytes in hex(noisy)
+#define DEBUG 0
 
+// Chunk size for reading/writing files in pieces to avoid large memory usage.
+const size_t CHUNK_SIZE = 4096;
+
+// Short alias for filesystem namespace (cause I'm lazy...).
 namespace fs = std::filesystem;
 
+// Tell the compiler to save the current alignment setting(with push) and then set the alignment to 1 byte.
 #pragma pack(push, 1)
+
 // Represents the header of a client request.
 // The structure is packed to match the byte-by-byte layout of the protocol.
 struct RequestHeader
@@ -31,10 +39,14 @@ struct ResponseHeader
     uint8_t version;
     uint16_t status;
 };
+
+// Restore the previous alignment setting(with pop).
 #pragma pack(pop)
 
 // Base path for storing all user backups.
 const fs::path BASE_BACKUP_PATH = "C:\\backupsvr";
+
+// Server protocol version
 const uint8_t SERVER_VERSION = 1;
 
 // Helper to print a byte buffer in hex format for debugging.
@@ -53,6 +65,7 @@ void print_hex(const char *description, const void *data, size_t length)
     }
 }
 
+// Constructor that takes ownership of the connected socket.
 RequestHandler::RequestHandler(tcp::socket socket) : m_socket(std::move(socket)) {}
 
 // The main handler function for a connection.
@@ -135,11 +148,6 @@ void RequestHandler::handleBackup()
 
     std::cout << "Payload size: " << payloadSize << " bytes" << std::endl;
 
-    std::vector<char> fileContent(payloadSize);
-    if (!readBytes(fileContent.data(), payloadSize))
-        return;
-
-    std::cout << "Received file content for " << filename << std::endl;
     // Construct the user's personal backup directory path.
     fs::path userDir = BASE_BACKUP_PATH / std::to_string(m_userId);
     fs::create_directories(userDir); // Create it if it doesn't exist.
@@ -148,15 +156,43 @@ void RequestHandler::handleBackup()
 
     std::cout << "Storing file at: " << filePath << std::endl;
 
-    // Write the received file content to disk.
+    // Open the file for writing.
     std::ofstream outFile(filePath, std::ios::binary);
     if (!outFile)
     {
         std::cerr << "Failed to open file for writing: " << filePath << std::endl;
+        // We must consume the file content from the socket to not break the protocol flow,
+        // even though we are not saving it.
+        std::vector<char> buffer(CHUNK_SIZE);
+        uint32_t remainingBytes = payloadSize;
+        while (remainingBytes > 0)
+        {
+            size_t bytesToRead = std::min((uint32_t)buffer.size(), remainingBytes);
+            if (!readBytes(buffer.data(), bytesToRead))
+                break; // Stop if connection breaks
+            remainingBytes -= bytesToRead;
+        }
         sendFullHeaderResponse(StatusCode::ERROR_GENERAL, filename);
         return;
     }
-    outFile.write(fileContent.data(), fileContent.size());
+
+    // Read from socket and write to file in chunks to avoid large memory allocation.
+    std::vector<char> buffer(CHUNK_SIZE);
+    uint32_t bytesReceived = 0;
+    while (bytesReceived < payloadSize)
+    {
+        size_t bytesToRead = std::min(CHUNK_SIZE, (size_t)(payloadSize - bytesReceived));
+        if (!readBytes(buffer.data(), bytesToRead))
+        {
+            std::cerr << "Failed to read file content chunk from socket." << std::endl;
+            outFile.close();
+            fs::remove(filePath); // Clean up the partial file
+            // Don't send a response, as the connection is likely broken.
+            return;
+        }
+        outFile.write(buffer.data(), bytesToRead);
+        bytesReceived += bytesToRead;
+    }
     outFile.close();
 
     std::cout << "Successfully backed up file: " << filePath << std::endl;
@@ -183,20 +219,17 @@ void RequestHandler::handleRestore()
         return;
     }
 
-    std::ifstream inFile(filePath, std::ios::binary | std::ios::ate);
+    uint32_t fileSize = fs::file_size(filePath);
+    std::cout << "Restoring file: " << filePath << " (" << fileSize << " bytes)" << std::endl;
+
+    std::ifstream inFile(filePath, std::ios::binary);
     if (!inFile)
     {
         sendFullHeaderResponse(StatusCode::ERROR_GENERAL, filename);
         return;
     }
 
-    std::streamsize size = inFile.tellg();
-    inFile.seekg(0, std::ios::beg);
-    std::vector<char> buffer(size);
-    inFile.read(buffer.data(), size);
-
-    std::cout << "Restoring file: " << filePath << " (" << size << " bytes)" << std::endl;
-    sendFileResponse(StatusCode::RESTORE_SUCCESS, filename, buffer);
+    sendStreamResponse(StatusCode::RESTORE_SUCCESS, filename, fileSize, inFile);
 }
 
 // Handles a request to delete a file.
@@ -259,11 +292,11 @@ void RequestHandler::handleListFiles()
         return;
     }
 
-    // Convert string to vector<char> for sending
-    std::vector<char> fileListContent(fileListStr.begin(), fileListStr.end());
+    uint32_t contentSize = fileListStr.length();
+    std::istringstream contentStream(fileListStr);
 
     std::cout << "Sending file list for user " << m_userId << std::endl;
-    sendFileResponse(StatusCode::LIST_SUCCESS, "", fileListContent);
+    sendStreamResponse(StatusCode::LIST_SUCCESS, "", contentSize, contentStream);
 }
 
 // Sends a simple status response (for 1002, 1003).
@@ -288,22 +321,44 @@ void RequestHandler::sendFullHeaderResponse(StatusCode status, const std::string
     sendBytes(&nameLen, sizeof(nameLen));
     sendBytes(filename.c_str(), nameLen);
 }
-// Sends a complex response containing file data.
-void RequestHandler::sendFileResponse(StatusCode status, const std::string &filename, const std::vector<char> &fileContent)
+
+// Sends a response that includes content, read from a stream.
+void RequestHandler::sendStreamResponse(StatusCode status, const std::string &filename, uint32_t contentSize, std::istream &contentStream)
 {
     ResponseHeader header;
     header.version = SERVER_VERSION;
     header.status = static_cast<uint16_t>(status);
 
     uint16_t nameLen = filename.length();
-    uint32_t contentSize = fileContent.size();
 
-    // Send all parts of the response sequentially.
+    // Send header
     sendBytes(&header, sizeof(header));
     sendBytes(&nameLen, sizeof(nameLen));
     sendBytes(filename.c_str(), nameLen);
     sendBytes(&contentSize, sizeof(contentSize));
-    sendBytes(fileContent.data(), contentSize);
+
+    // Send content in chunks
+    std::vector<char> buffer(CHUNK_SIZE);
+    uint32_t totalBytesSent = 0;
+    while (totalBytesSent < contentSize)
+    {
+        contentStream.read(buffer.data(), CHUNK_SIZE);
+        std::streamsize bytesRead = contentStream.gcount();
+        if (bytesRead > 0)
+        {
+            if (!sendBytes(buffer.data(), bytesRead))
+            {
+                // Connection broken
+                break;
+            }
+            totalBytesSent += bytesRead;
+        }
+        else
+        {
+            // End of stream but not all content sent
+            break;
+        }
+    }
 }
 
 // Helper to read a specific number of bytes from the socket.
@@ -327,7 +382,7 @@ bool RequestHandler::sendBytes(const void *buffer, size_t length)
     boost::asio::write(m_socket, boost::asio::buffer(buffer, length), ec);
     if (ec)
     {
-        std::cerr << "Write error: " << ec.what() << std::endl;
+        std::cerr << "Write error: " << ec.message() << std::endl;
         return false;
     }
     return true;

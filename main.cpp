@@ -27,10 +27,12 @@ void session(tcp::socket sock)
     }
 }
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
     try
     {
+        // Allow port number to be specified as a command line argument.
+        // Default to DEFAULT_PORT if not provided.
         int port = DEFAULT_PORT;
         if (argc > 1)
         {
@@ -43,7 +45,8 @@ int main(int argc, char* argv[])
         // The acceptor object listens for new connections.
         tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), port));
 
-        std::cout << "Server listening on port " << port << "..." << std::endl;
+        std::cout << "File Backup Server listening on port " << port << "..." << std::endl;
+        std::cout << "Created by Ariel Cohen ~ arielchook@gmail.com" << std::endl;
 
         // The main server loop.
         while (true)

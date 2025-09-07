@@ -19,32 +19,33 @@ The server is written in C++ and uses the **Boost.Asio** library for networking.
 The server can be built from the command line using `nmake`.
 
 1.  **Set Up Environment:** Before building, you need to set up the Visual Studio environment variables. The `Makefile` is configured to do this automatically by calling `vcvarsall.bat`.
-    -   Ensure the environment variable `VCINSTALLDIR` is set to the root of your Visual Studio installation's VC directory (e.g., `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC`).
-    -   The `Makefile` uses this variable to find `vcvarsall.bat`. If your path is different, you may need to adjust the `build` target in the `Makefile`.
+
+    - Ensure the environment variable `VCINSTALLDIR` is set to the root of your Visual Studio installation's VC directory (e.g., `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC`).
+    - The `Makefile` uses this variable to find `vcvarsall.bat`. If your path is different, you may need to adjust the `build` target in the `Makefile`.
 
 2.  **Build Command:** Open a command prompt, navigate to the project's root directory, and run:
-    ```sh
+    ```cmd
     nmake build
     ```
     This command will first set up the environment and then compile the source files, creating `server.exe`.
 
 ### Running the Server
 
--   The server executable is `server.exe`.
--   It accepts an optional command-line argument for the port number.
--   If no port is provided, it defaults to `1234`.
+- The server executable is `server.exe`.
+- It accepts an optional command-line argument for the port number.
+- If no port is provided, it defaults to `1234`.
 
 **Examples:**
 
--   Run on the default port:
-    ```sh
-    server.exe
-    ```
--   Run on a specific port (e.g., 8080):
-    ```sh
-    server.exe 8080
-    ```
--   The server will create a `C:\backupsvr` directory if it doesn't exist. This is where all client files will be stored.
+- Run on the default port:
+  ```cmd
+  server.exe
+  ```
+- Run on a specific port (e.g., 8080):
+  ```cmd
+  server.exe 8080
+  ```
+- The server will create a `C:\backupsvr` directory if it doesn't exist. This is where all client files will be stored.
 
 ## 2. Client Setup (Python)
 
@@ -76,7 +77,7 @@ Before running, make sure the client directory is set up correctly:
 1.  Open a terminal or command prompt.
 2.  Navigate to the project directory.
 3.  Run the script using the command:
-    ```sh
+    ```cmd
     python client.py
     ```
 4.  The client will execute the predefined sequence of operations (list, backup, backup, list, restore, delete, restore) and print the server's response for each step. The restored file will be saved as `tmp` in the client directory.

@@ -1,14 +1,16 @@
-
 import socket
 import struct
 import random
 import os
+from io import BytesIO
 
 # Client protocol version
 CLIENT_VERSION = 1
 
-# Add DEBUG flag
-DEBUG = True
+# DEBUG flag - if set to True it prints all sent and received bytes in hex (noisy)
+DEBUG = False
+
+CHUNK_SIZE = 4096
 
 # Operation codes for requests
 OP_BACKUP = 100
@@ -83,13 +85,23 @@ class BackupClient:
         chunks = []
         bytes_recd = 0
         while bytes_recd < length:
-            chunk = self.sock.recv(min(length - bytes_recd, 4096))
+            chunk = self.sock.recv(min(length - bytes_recd, CHUNK_SIZE))
             if not chunk:
                 raise RuntimeError("Socket connection broken")
             chunks.append(chunk)
             bytes_recd += len(chunk)
         return b''.join(chunks)
-        
+
+    def _read_payload_in_chunks(self, size, file_handle):
+        """Reads a payload of a given size in chunks and writes it to a file handle."""
+        remaining_bytes = size
+        while remaining_bytes > 0:
+            chunk = self.sock.recv(min(remaining_bytes, CHUNK_SIZE))
+            if not chunk:
+                raise RuntimeError("Socket connection broken")
+            file_handle.write(chunk)
+            remaining_bytes -= len(chunk)
+
     def _read_response(self):
         """Reads and parses a response from the server."""
         # Read the fixed-size part of the header
@@ -102,7 +114,7 @@ class BackupClient:
 
         # Case 1: Only version and status are sent (1002, 1003)
         if status in [1002, 1003]:
-            return status, None, None
+            return status, None, 0
 
         # Case 2: Full header (version, status, name_len, filename) is sent (212, 1001)
         # and also for 210, 211 which have full header + body
@@ -124,13 +136,9 @@ class BackupClient:
                 print(f"  > Received: {size_data.hex()}")
             size = struct.unpack('<I', size_data)[0]
             print(f"  > Response Payload Size: {size} bytes")
-
-            payload = self._recv_all(size)
-            if DEBUG and payload:
-                print(f"  > Received: {payload.hex()}")
-            return status, filename, payload
+            return status, filename, size
         else: # This covers 212, 1001 where only full header is sent
-            return status, filename, None
+            return status, filename, 0
 
 
     def request_list_files(self):
@@ -139,8 +147,11 @@ class BackupClient:
         # Header: user_id, version, op
         header = struct.pack('<IBB', self.user_id, CLIENT_VERSION, OP_LIST_FILES)
         self._send_all(header)
-        status, _, payload = self._read_response()
-        if payload:
+        status, _, payload_size = self._read_response()
+        if payload_size > 0:
+            payload_buffer = BytesIO()
+            self._read_payload_in_chunks(payload_size, payload_buffer)
+            payload = payload_buffer.getvalue()
             print("--- Server File List ---")
             print(payload.decode('ascii').strip())
             print("------------------------")
@@ -153,17 +164,23 @@ class BackupClient:
             print(f"  > Error: File '{filename}' not found locally.")
             return None
 
-        with open(filename, 'rb') as f:
-            payload = f.read()
-
+        file_size = os.path.getsize(filename)
         filename_bytes = filename.encode('ascii')
         
         # Header: user_id, version, op
         header = struct.pack('<IBB', self.user_id, CLIENT_VERSION, OP_BACKUP)
         # File info: name_len, filename, size
-        file_info = struct.pack(f'<H{len(filename_bytes)}sI', len(filename_bytes), filename_bytes, len(payload))
+        file_info = struct.pack(f'<H{len(filename_bytes)}sI', len(filename_bytes), filename_bytes, file_size)
         
-        self._send_all(header + file_info + payload)
+        self._send_all(header + file_info)
+
+        with open(filename, 'rb') as f:
+            while True:
+                chunk = f.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                self._send_all(chunk)
+        
         status, _, _ = self._read_response()
         return status
         
@@ -178,12 +195,12 @@ class BackupClient:
         file_info = struct.pack(f'<H{len(filename_bytes)}s', len(filename_bytes), filename_bytes)
         
         self._send_all(header + file_info)
-        status, _, payload = self._read_response()
+        status, response_filename, payload_size = self._read_response()
         
-        if status == 210 and payload:
-            save_as = "tmp"
+        if status == 210 and payload_size > 0:
+            save_as = response_filename
             with open(save_as, 'wb') as f:
-                f.write(payload)
+                self._read_payload_in_chunks(payload_size, f)
             print(f"  > File successfully restored and saved as '{save_as}'")
         return status
 
