@@ -1,4 +1,4 @@
-# Maman 14: Defensive Systems Programming - Backup Server & Client
+# Maman 14: Defensive Programming - Backup Server & Client
 
 This project contains a C++ backup server and a Python client that communicate over a custom TCP protocol to store, retrieve, list, and delete files.
 
