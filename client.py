@@ -197,8 +197,21 @@ class BackupClient:
         self._send_all(header + file_info)
         status, response_filename, payload_size = self._read_response()
         
+        # Note: seems there's a conflict in the spec about the filename in the response to RESTORE.
+        # page 3 says it should save the file in the same folder with the name "tmp". This doesn't make sense as it only allows to restore one file
+        # at a time, and it doesn't restore the file to its original name (assuming the file is gone from local machine, hence I need to restore it).
+        # Then, on page 5 the protocol spec for RESTORE says the response includes the filename.
+        # I'll assume the latter is correct and the server sends back the original filename.
         if status == 210 and payload_size > 0:
-            save_as = response_filename
+            # Sanitize the filename from the server to prevent path traversal.
+            # This strips all directory parts (e.g., "../../") and keeps only the filename.
+            save_as = os.path.basename(response_filename)
+            
+            # As an extra precaution, check if the resulting filename is empty.
+            if not save_as:
+                print("  > ERROR: Server sent an invalid or empty filename for saving.")
+                return status
+
             with open(save_as, 'wb') as f:
                 self._read_payload_in_chunks(payload_size, f)
             print(f"  > File successfully restored and saved as '{save_as}'")

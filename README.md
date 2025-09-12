@@ -113,3 +113,8 @@ An attacker can have their server use the backup functionality as intended but d
 #### Malicious Content
 
 An attacker may run their server with the normal backup functionality. It can then contaminate each executable in users folder with a virus/trojan. Once restored, the user's machine will be infected or exposed.
+
+#### Path Traversal
+
+Same idea as in the server. A malicious server may send a relative file path in a response to RESTORE, which in turn may overwrite a system file on the client's machine.
+I've addressed this in BaclupClient.request_restore_file() .
