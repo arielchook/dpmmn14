@@ -9,9 +9,11 @@
 #include <vector>
 #include <filesystem>
 #include <istream>
-
+#include <optional>
 
 using boost::asio::ip::tcp;
+// Short alias for filesystem namespace (cause I'm lazy...).
+namespace fs = std::filesystem;
 
 // A class to handle a single client connection.
 // An instance of this class is created for each new connection in its own thread.
@@ -68,6 +70,8 @@ private:
     // Sends a response that includes content, read from a stream.
     void sendStreamResponse(StatusCode status, const std::string &filename, uint32_t contentSize, std::istream &contentStream);
 
+    // Validates and constructs the full file path for a given filename passed from client
+    std::optional<fs::path> getValidatedFilePath(const std::string &filename);
 
     tcp::socket m_socket; // The socket for this client connection.
     uint32_t m_userId;    // The user ID from the request header.

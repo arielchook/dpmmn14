@@ -81,3 +81,35 @@ Before running, make sure the client directory is set up correctly:
     python client.py
     ```
 4.  The client will execute the predefined sequence of operations (list, backup, backup, list, restore, delete, restore) and print the server's response for each step. The restored file will be saved as `tmp` in the client directory.
+
+## Potential Security Issues
+
+### Attacking The Server
+
+#### Connection Flooding
+
+The server is designed to create a new thread for every incoming connection. An attacker could open thousands of TCP connections to the server and keep them open without sending any data. Each connection and thread consumes server memory and operating system resources, which could eventually prevent legitimate users from connecting.
+
+#### Disk Space Exhaustion
+
+An attacker can use the backup functionality as intended but do so maliciously. By creating many different client instances (each with a unique random user ID) and uploading very large files, an attacker could fill the server's hard drive. Once the disk is full, no one else can back up their files.
+
+#### Path Traversal
+
+When handling requests for file operations (backup, restore, delete), the server combines a base directory path with the filename provided by the client. An attacker could provide a malicious filename like
+
+../../../../../boot.ini. If the server's code is not secure, this could allow the attacker to:
+Delete arbitrary files on the server (e.g., deleting important system files).
+Overwrite arbitrary files by backing up a malicious file to a sensitive location.
+Retrieve arbitrary files by requesting to restore a file from outside the designated backup directory.
+I've addressed this in RequestHandler::getValidatedFilePath .
+
+### Attacking The Client
+
+#### Disk Space Exhaustion
+
+An attacker can have their server use the backup functionality as intended but do so maliciously. It can return extremely large files that will be saved by the client to their hard drive, exhausting disk space.
+
+#### Malicious Content
+
+An attacker may run their server with the normal backup functionality. It can then contaminate each executable in users folder with a virus/trojan. Once restored, the user's machine will be infected or exposed.

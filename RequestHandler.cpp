@@ -18,9 +18,6 @@
 // Chunk size for reading/writing files in pieces to avoid large memory usage.
 const size_t CHUNK_SIZE = 4096;
 
-// Short alias for filesystem namespace (cause I'm lazy...).
-namespace fs = std::filesystem;
-
 // Tell the compiler to save the current alignment setting(with push) and then set the alignment to 1 byte.
 #pragma pack(push, 1)
 
@@ -63,6 +60,37 @@ void print_hex(const char *description, const void *data, size_t length)
         }
         std::cout << std::dec << std::endl; // Reset to decimal for other outputs
     }
+}
+
+std::optional<fs::path> RequestHandler::getValidatedFilePath(const std::string &filename)
+{
+    // Basic check to reject attempts to use directory navigation directly
+    if (filename.empty() || filename == "." || filename == "..")
+    {
+        return std::nullopt;
+    }
+
+    fs::path userDir = BASE_BACKUP_PATH / std::to_string(m_userId);
+    fs::path fullPath = userDir / filename;
+
+    // Use weakly_canonical to normalize the path (resolving '..') without
+    // requiring the file to exist, which is crucial for backup operations.
+    fs::path canonicalFullPath = fs::weakly_canonical(fullPath);
+    fs::path canonicalUserDir = fs::weakly_canonical(userDir);
+
+    // Check if the canonical user directory is a prefix of the canonical full path.
+    // If it's not, the path has escaped the user's directory.
+    auto res = std::mismatch(canonicalUserDir.begin(), canonicalUserDir.end(),
+                             canonicalFullPath.begin(), canonicalFullPath.end());
+
+    if (res.first != canonicalUserDir.end())
+    {
+        // Path traversal detected
+        return std::nullopt;
+    }
+
+    // The path is safe, return it
+    return canonicalFullPath;
 }
 
 // Constructor that takes ownership of the connected socket.
@@ -152,7 +180,16 @@ void RequestHandler::handleBackup()
     fs::path userDir = BASE_BACKUP_PATH / std::to_string(m_userId);
     fs::create_directories(userDir); // Create it if it doesn't exist.
 
-    fs::path filePath = userDir / filename;
+    // Securely get and validate the file path
+    auto validatedPathOpt = getValidatedFilePath(filename);
+    if (!validatedPathOpt)
+    {
+        std::cerr << "SECURITY ALERT: Path traversal attempt detected from user " << m_userId
+                  << " with filename '" << filename << "'" << std::endl;
+        sendSimpleStatusResponse(StatusCode::ERROR_GENERAL); // Reject malicious request
+        return;
+    }
+    fs::path filePath = *validatedPathOpt; // Use the safe, validated path
 
     std::cout << "Storing file at: " << filePath << std::endl;
 
@@ -210,7 +247,16 @@ void RequestHandler::handleRestore()
     if (!readBytes(&filename[0], nameLen))
         return;
 
-    fs::path filePath = BASE_BACKUP_PATH / std::to_string(m_userId) / filename;
+    // Securely get and validate the file path
+    auto validatedPathOpt = getValidatedFilePath(filename);
+    if (!validatedPathOpt)
+    {
+        std::cerr << "SECURITY ALERT: Path traversal attempt detected from user " << m_userId
+                  << " with filename '" << filename << "'" << std::endl;
+        sendSimpleStatusResponse(StatusCode::ERROR_GENERAL); // Reject malicious request
+        return;
+    }
+    fs::path filePath = *validatedPathOpt; // Use the safe, validated path
 
     if (!fs::exists(filePath))
     {
@@ -243,7 +289,16 @@ void RequestHandler::handleDelete()
     if (!readBytes(&filename[0], nameLen))
         return;
 
-    fs::path filePath = BASE_BACKUP_PATH / std::to_string(m_userId) / filename;
+    // Securely get and validate the file path
+    auto validatedPathOpt = getValidatedFilePath(filename);
+    if (!validatedPathOpt)
+    {
+        std::cerr << "SECURITY ALERT: Path traversal attempt detected from user " << m_userId
+                  << " with filename '" << filename << "'" << std::endl;
+        sendSimpleStatusResponse(StatusCode::ERROR_GENERAL); // Reject malicious request
+        return;
+    }
+    fs::path filePath = *validatedPathOpt; // Use the safe, validated path
 
     if (!fs::exists(filePath))
     {
@@ -274,6 +329,7 @@ void RequestHandler::handleListFiles()
     std::string fileListStr;
     bool filesFound = false;
 
+    // iterate over files in the user's backup directory and build list of filenames to be returned
     if (fs::exists(userDir) && fs::is_directory(userDir))
     {
         for (const auto &entry : fs::directory_iterator(userDir))
@@ -296,6 +352,12 @@ void RequestHandler::handleListFiles()
     std::istringstream contentStream(fileListStr);
 
     std::cout << "Sending file list for user " << m_userId << std::endl;
+    // There's an issue in the protocol spec regarding the filename in LIST_FILES response.
+    // In page 1 it says to create filename with a random name and store in it the list of files,
+    // Why would we need this file? it can even become a potential security issue if a rogue client sends many request for LIST_FILES
+    // causing the server to generate many files on disk.
+    // I've submitted a question to the forum for clarification, but never got a response:
+    // https://opal.openu.ac.il/mod/ouilforum/discuss.php?d=3304507&p=7792947#p7792947
     sendStreamResponse(StatusCode::LIST_SUCCESS, "", contentSize, contentStream);
 }
 
